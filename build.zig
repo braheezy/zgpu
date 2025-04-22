@@ -1,8 +1,14 @@
 const std = @import("std");
 const log = std.log.scoped(.zgpu);
 
+pub const WebgpuBackend = enum {
+    dawn,
+    wgpu,
+};
+
 const default_options = struct {
     const uniforms_buffer_size = 4 * 1024 * 1024;
+    const webgpu_backend = WebgpuBackend.dawn;
     const dawn_skip_validation = false;
     const dawn_allow_unsafe_apis = false;
     const buffer_pool_size = 256;
@@ -23,6 +29,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
     const options = .{
+        .webgpu_backend = b.option(
+            WebgpuBackend,
+            "webgpu_backend",
+            "Set WebGPU backend",
+        ) orelse default_options.webgpu_backend,
         .uniforms_buffer_size = b.option(
             u64,
             "uniforms_buffer_size",
@@ -110,33 +121,56 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const zdawn = b.addStaticLibrary(.{
-        .name = "zdawn",
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(zdawn);
+    const webgpu_lib = if (options.webgpu_backend == .dawn) zdawn: {
+        const zdawn = b.addStaticLibrary(.{
+            .name = "zdawn",
+            .target = target,
+            .optimize = optimize,
+        });
+        b.installArtifact(zdawn);
 
-    linkSystemDeps(b, zdawn);
-    addLibraryPathsTo(zdawn);
+        linkSystemDeps(b, zdawn);
+        addLibraryPathsTo(zdawn);
 
-    zdawn.linkSystemLibrary("dawn");
-    zdawn.linkLibC();
-    if (target.result.abi != .msvc)
-        zdawn.linkLibCpp();
+        zdawn.linkSystemLibrary("dawn");
+        zdawn.linkLibC();
+        if (target.result.abi != .msvc)
+            zdawn.linkLibCpp();
 
-    zdawn.addIncludePath(b.path("libs/dawn/include"));
-    zdawn.addIncludePath(b.path("src"));
+        zdawn.addIncludePath(b.path("libs/dawn/include"));
+        zdawn.addIncludePath(b.path("src"));
 
-    zdawn.addCSourceFile(.{
-        .file = b.path("src/dawn.cpp"),
-        .flags = &.{ "-std=c++17", "-fno-sanitize=undefined" },
-    });
-    zdawn.addCSourceFile(.{
-        .file = b.path("src/dawn_proc.c"),
-        .flags = &.{"-fno-sanitize=undefined"},
-    });
+        zdawn.addCSourceFile(.{
+            .file = b.path("src/dawn.cpp"),
+            .flags = &.{ "-std=c++17", "-fno-sanitize=undefined" },
+        });
+        zdawn.addCSourceFile(.{
+            .file = b.path("src/dawn_proc.c"),
+            .flags = &.{"-fno-sanitize=undefined"},
+        });
+        break :zdawn zdawn;
+    } else wgpu: {
+        const zwgpu = b.addStaticLibrary(.{
+            .name = "zwgpu",
+            .target = target,
+            .optimize = optimize,
+        });
+        b.installArtifact(zwgpu);
 
+        const wgpu_dep = b.lazyDependency("wgpu_macos_aarch64_release", .{}) orelse unreachable;
+
+        linkSystemDeps(b, zwgpu);
+        addLibraryPathsTo(zwgpu);
+
+        zwgpu.addObjectFile(wgpu_dep.path("libwgpu_native.a"));
+        zwgpu.linkLibC();
+        if (target.result.abi != .msvc)
+            zwgpu.linkLibCpp();
+
+        zwgpu.addIncludePath(wgpu_dep.path("include/wgpu/"));
+        zwgpu.addIncludePath(wgpu_dep.path("include/webgpu"));
+        break :wgpu zwgpu;
+    };
     const test_step = b.step("test", "Run zgpu tests");
 
     const tests = b.addTest(.{
@@ -146,7 +180,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     tests.addIncludePath(b.path("libs/dawn/include"));
-    tests.linkLibrary(zdawn);
+    tests.linkLibrary(webgpu_lib);
     linkSystemDeps(b, tests);
     addLibraryPathsTo(tests);
     b.installArtifact(tests);

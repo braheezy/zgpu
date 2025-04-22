@@ -424,6 +424,18 @@ pub const StructType = enum(u32) {
     request_adapter_options_get_gl_proc = 0x000003F3,
     dawn_multisample_state_render_to_single_sampled = 0x000003F4,
     dawn_render_pass_color_attachment_render_to_single_sampled = 0x000003F5,
+
+    // wgpu-native extras (wgpu.h)
+    device_extras = 0x00030001,
+    required_limits_extras = 0x00030002,
+    pipeline_layout_extras = 0x00030003,
+    shader_module_glsl_descriptor = 0x00030004,
+    supported_limits_extras = 0x00030005,
+    instance_extras = 0x00030006,
+    bind_group_entry_extras = 0x00030007,
+    bind_group_layout_entry_extras = 0x00030008,
+    query_set_descriptor_extras = 0x00030009,
+    surface_configuration_extras = 0x0003000A,
 };
 
 pub const SamplerBindingType = enum(u32) {
@@ -711,6 +723,23 @@ pub const AdapterProperties = extern struct {
     adapter_type: AdapterType,
     backend_type: BackendType,
     compatibility_mode: bool,
+};
+
+pub const AdapterInfo = extern struct {
+    next_in_chain: ?*ChainedStructOut = null,
+    vendor: [*:0]const u8,
+    architecture: [*:0]const u8,
+    device: [*:0]const u8,
+    description: [*:0]const u8,
+    backend_type: BackendType,
+    adapter_type: AdapterType,
+    vendor_id: u32,
+    device_id: u32,
+
+    pub inline fn freeMembers(self: AdapterInfo) void {
+        wgpuAdapterInfoFreeMembers(self);
+    }
+    extern fn wgpuAdapterInfoFreeMembers(adapter_info: AdapterInfo) void;
 };
 
 pub const BindGroupEntry = extern struct {
@@ -1350,6 +1379,11 @@ pub const Adapter = *opaque {
         wgpuAdapterGetProperties(adapter, properties);
     }
     extern fn wgpuAdapterGetProperties(adapter: Adapter, properties: *AdapterProperties) void;
+
+    pub fn getInfo(adapter: Adapter, info: *AdapterInfo) void {
+        wgpuAdapterGetInfo(adapter, info);
+    }
+    extern fn wgpuAdapterGetInfo(adapter: Adapter, info: *AdapterInfo) void;
 
     pub fn hasFeature(adapter: Adapter, feature: FeatureName) bool {
         return wgpuAdapterHasFeature(adapter, feature);
@@ -2087,6 +2121,13 @@ pub const Device = *opaque {
     }
     extern fn wgpuDeviceTick(device: Device) void;
 
+    // wgpu-native
+    pub fn poll(self: Device, wait: bool, wrapped_submission_index: ?*const WrappedSubmissionIndex) bool {
+        std.debug.print("poll\n", .{});
+        return wgpuDevicePoll(self, wait, wrapped_submission_index);
+    }
+    extern fn wgpuDevicePoll(device: Device, wait: bool, wrapped_submission_index: ?*const WrappedSubmissionIndex) bool;
+
     pub fn reference(device: Device) void {
         wgpuDeviceReference(device);
     }
@@ -2096,6 +2137,11 @@ pub const Device = *opaque {
         wgpuDeviceRelease(device);
     }
     extern fn wgpuDeviceRelease(device: Device) void;
+};
+
+pub const WrappedSubmissionIndex = extern struct {
+    queue: *Queue,
+    submission_index: u64,
 };
 
 pub const ExternalTexture = *opaque {
@@ -2231,8 +2277,9 @@ pub const Queue = *opaque {
         signal_value: u64,
         callback: QueueWorkDoneCallback,
         userdata: ?*anyopaque,
+        use_emscripten: bool,
     ) void {
-        if (emscripten) {
+        if (use_emscripten) {
             const oswd = @extern(
                 *const fn (
                     queue: Queue,
@@ -2879,6 +2926,73 @@ pub const Surface = *opaque {
         wgpuSurfaceRelease(surface);
     }
     extern fn wgpuSurfaceRelease(surface: Surface) void;
+
+    pub fn configure(self: Surface, config: *const SurfaceConfiguration) void {
+        wgpuSurfaceConfigure(self, config);
+    }
+    extern fn wgpuSurfaceConfigure(surface: Surface, config: *const SurfaceConfiguration) void;
+
+    pub fn present(self: Surface) void {
+        wgpuSurfacePresent(self);
+    }
+    extern fn wgpuSurfacePresent(surface: Surface) void;
+
+    pub fn getCurrentTexture(self: Surface, surface_texture: *SurfaceTexture) void {
+        wgpuSurfaceGetCurrentTexture(self, surface_texture);
+    }
+    extern fn wgpuSurfaceGetCurrentTexture(surface: Surface, surface_texture: *SurfaceTexture) void;
+};
+
+pub const SurfaceConfiguration = extern struct {
+    next_in_chain: ?*const ChainedStruct = null,
+    device: Device,
+    format: TextureFormat,
+    usage: TextureUsage = .{ .render_attachment = true },
+    view_format_count: usize = 0,
+    view_formats: [*]const TextureFormat = (&[_]TextureFormat{}).ptr,
+    alpha_mode: CompositeAlphaMode = CompositeAlphaMode.auto,
+    width: u32,
+    height: u32,
+    present_mode: PresentMode = PresentMode.fifo,
+
+    pub inline fn withDesiredMaxFrameLatency(self: SurfaceConfiguration, desired_max_frame_latency: u32) SurfaceConfiguration {
+        var sc = self;
+        sc.next_in_chain = @ptrCast(&SurfaceConfigurationExtras{
+            .desired_maximum_frame_latency = desired_max_frame_latency,
+        });
+        return sc;
+    }
+};
+
+pub const SurfaceConfigurationExtras = extern struct {
+    chain: ChainedStruct = ChainedStruct{
+        .struct_type = .surface_configuration_extras,
+    },
+
+    desired_maximum_frame_latency: u32,
+};
+
+pub const SurfaceTexture = extern struct {
+    texture: Texture,
+    suboptimal: U32Bool,
+    status: GetCurrentTextureStatus,
+};
+
+pub const GetCurrentTextureStatus = enum(u32) {
+    success = 0x00000000,
+    timeout = 0x00000001,
+    outdated = 0x00000002,
+    lost = 0x00000003,
+    out_of_memory = 0x00000004,
+    device_lost = 0x00000005,
+};
+
+pub const CompositeAlphaMode = enum(u32) {
+    auto = 0x00000000,
+    @"opaque" = 0x00000001,
+    premultiplied = 0x00000002,
+    unpremultiplied = 0x00000003,
+    inherit = 0x00000004,
 };
 
 pub const SwapChain = *opaque {

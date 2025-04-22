@@ -88,8 +88,11 @@ pub const GraphicsContext = struct {
     device: wgpu.Device,
     queue: wgpu.Queue,
     surface: wgpu.Surface,
+    surface_configuration: wgpu.SurfaceConfiguration,
     swapchain: wgpu.SwapChain,
     swapchain_descriptor: wgpu.SwapChainDescriptor,
+    width: u32,
+    height: u32,
 
     buffer_pool: BufferPool,
     texture_pool: TexturePool,
@@ -119,12 +122,12 @@ pub const GraphicsContext = struct {
         window_provider: WindowProvider,
         options: GraphicsContextOptions,
     ) !*GraphicsContext {
-        if (!emscripten) dawnProcSetProcs(dnGetProcs());
+        if (!emscripten and zgpu_options.webgpu_backend == .dawn) dawnProcSetProcs(dnGetProcs());
 
-        const native_instance = if (!emscripten) dniCreate();
-        errdefer if (!emscripten) dniDestroy(native_instance);
+        const native_instance = if (!emscripten and zgpu_options.webgpu_backend == .dawn) dniCreate();
+        errdefer if (!emscripten and zgpu_options.webgpu_backend == .dawn) dniDestroy(native_instance);
 
-        const instance = if (emscripten) wgpu.createInstance(.{}) else dniGetWgpuInstance(native_instance).?;
+        const instance = if (emscripten or zgpu_options.webgpu_backend == .wgpu) wgpu.createInstance(.{}) else dniGetWgpuInstance(native_instance).?;
 
         const adapter = adapter: {
             const Response = struct {
@@ -169,21 +172,39 @@ pub const GraphicsContext = struct {
         };
         errdefer adapter.release();
 
-        var properties: wgpu.AdapterProperties = undefined;
-        properties.next_in_chain = null;
-        adapter.getProperties(&properties);
+        if (zgpu_options.webgpu_backend == .dawn) {
+            var properties: wgpu.AdapterProperties = undefined;
+            properties.next_in_chain = null;
+            adapter.getProperties(&properties);
 
-        if (emscripten) {
-            properties.name = "emscripten";
-            properties.driver_description = "emscripten";
-            properties.adapter_type = .unknown;
-            properties.backend_type = .undef;
+            if (emscripten) {
+                properties.name = "emscripten";
+                properties.driver_description = "emscripten";
+                properties.adapter_type = .unknown;
+                properties.backend_type = .undef;
+            }
+            std.log.info("[zgpu] High-performance device has been selected:", .{});
+            std.log.info("[zgpu]   Name: {s}", .{properties.name});
+            std.log.info("[zgpu]   Driver: {s}", .{properties.driver_description});
+            std.log.info("[zgpu]   Adapter type: {s}", .{@tagName(properties.adapter_type)});
+            std.log.info("[zgpu]   Backend type: {s}", .{@tagName(properties.backend_type)});
+        } else if (zgpu_options.webgpu_backend == .wgpu) {
+            var info: wgpu.AdapterInfo = undefined;
+            info.next_in_chain = null;
+            adapter.getInfo(&info);
+
+            if (emscripten) {
+                info.device = "emscripten";
+                info.description = "emscripten";
+                info.adapter_type = .unknown;
+                info.backend_type = .undef;
+            }
+            std.log.info("[zgpu] High-performance device has been selected:", .{});
+            std.log.info("[zgpu]   Device: {s}", .{info.device});
+            std.log.info("[zgpu]   Driver: {s}", .{info.description});
+            std.log.info("[zgpu]   Adapter type: {s}", .{@tagName(info.adapter_type)});
+            std.log.info("[zgpu]   Backend type: {s}", .{@tagName(info.backend_type)});
         }
-        std.log.info("[zgpu] High-performance device has been selected:", .{});
-        std.log.info("[zgpu]   Name: {s}", .{properties.name});
-        std.log.info("[zgpu]   Driver: {s}", .{properties.driver_description});
-        std.log.info("[zgpu]   Adapter type: {s}", .{@tagName(properties.adapter_type)});
-        std.log.info("[zgpu]   Backend type: {s}", .{@tagName(properties.backend_type)});
 
         const device = device: {
             const Response = struct {
@@ -224,7 +245,7 @@ pub const GraphicsContext = struct {
             var response = Response{};
             adapter.requestDevice(
                 wgpu.DeviceDescriptor{
-                    .next_in_chain = @ptrCast(&dawn_toggles),
+                    .next_in_chain = if (zgpu_options.webgpu_backend == .dawn) @ptrCast(&dawn_toggles) else null,
                     .required_features_count = options.required_features.len,
                     .required_features = options.required_features.ptr,
                     .required_limits = @ptrCast(options.required_limits),
@@ -249,34 +270,53 @@ pub const GraphicsContext = struct {
         };
         errdefer device.release();
 
-        device.setUncapturedErrorCallback(logUnhandledError, null);
+        if (zgpu_options.webgpu_backend == .dawn) {
+            device.setUncapturedErrorCallback(logUnhandledError, null);
+        }
 
         const surface = createSurfaceForWindow(instance, window_provider);
         errdefer surface.release();
 
         const framebuffer_size = window_provider.getFramebufferSize();
 
-        const swapchain_descriptor = wgpu.SwapChainDescriptor{
-            .label = "zig-gamedev-gctx-swapchain",
-            .usage = .{ .render_attachment = true },
-            .format = swapchain_format,
-            .width = @intCast(framebuffer_size[0]),
-            .height = @intCast(framebuffer_size[1]),
-            .present_mode = options.present_mode,
-        };
-        const swapchain = device.createSwapChain(surface, swapchain_descriptor);
-        errdefer swapchain.release();
+        var swapchain: wgpu.SwapChain = undefined;
+        var swapchain_descriptor: wgpu.SwapChainDescriptor = undefined;
+        var surface_configuration: wgpu.SurfaceConfiguration = undefined;
+        if (zgpu_options.webgpu_backend == .wgpu) {
+            surface_configuration = wgpu.SurfaceConfiguration{
+                .device = device,
+                .format = .bgra8_unorm,
+                .width = @intCast(framebuffer_size[0]),
+                .height = @intCast(framebuffer_size[1]),
+                .present_mode = options.present_mode,
+            };
+            surface.configure(&surface_configuration);
+        } else {
+            swapchain_descriptor = wgpu.SwapChainDescriptor{
+                .label = "zig-gamedev-gctx-swapchain",
+                .usage = .{ .render_attachment = true },
+                .format = swapchain_format,
+                .width = @intCast(framebuffer_size[0]),
+                .height = @intCast(framebuffer_size[1]),
+                .present_mode = options.present_mode,
+            };
+            swapchain = device.createSwapChain(surface, swapchain_descriptor);
+            errdefer swapchain.release();
+        }
 
         const gctx = try allocator.create(GraphicsContext);
         gctx.* = .{
             .window_provider = window_provider,
-            .native_instance = if (emscripten) null else native_instance,
+            .native_instance = if (emscripten or zgpu_options.webgpu_backend == .wgpu) null else native_instance,
             .instance = instance,
             .device = device,
             .queue = device.getQueue(),
             .surface = surface,
+            .surface_configuration = surface_configuration,
             .swapchain = swapchain,
             .swapchain_descriptor = swapchain_descriptor,
+            .width = framebuffer_size[0],
+            .height = framebuffer_size[1],
             .buffer_pool = BufferPool.init(allocator, zgpu_options.buffer_pool_size),
             .texture_pool = TexturePool.init(allocator, zgpu_options.texture_pool_size),
             .texture_view_pool = TextureViewPool.init(allocator, zgpu_options.texture_view_pool_size),
@@ -296,12 +336,14 @@ pub const GraphicsContext = struct {
     pub fn destroy(gctx: *GraphicsContext, allocator: std.mem.Allocator) void {
         // Wait for the GPU to finish all encoded commands.
         while (gctx.stats.cpu_frame_number != gctx.stats.gpu_frame_number) {
-            gctx.device.tick();
+            if (zgpu_options.webgpu_backend == .dawn) gctx.device.tick();
+            if (zgpu_options.webgpu_backend == .wgpu) _ = gctx.device.poll(true, null);
         }
 
         // Wait for all outstanding mapAsync() calls to complete.
         wait_loop: while (true) {
-            gctx.device.tick();
+            if (zgpu_options.webgpu_backend == .dawn) gctx.device.tick();
+            if (zgpu_options.webgpu_backend == .wgpu) _ = gctx.device.poll(true, null);
             var i: u32 = 0;
             while (i < gctx.uniforms.stage.num) : (i += 1) {
                 if (gctx.uniforms.stage.buffers[i].slice == null) {
@@ -322,10 +364,10 @@ pub const GraphicsContext = struct {
         gctx.render_pipeline_pool.deinit(allocator);
         gctx.compute_pipeline_pool.deinit(allocator);
         gctx.surface.release();
-        gctx.swapchain.release();
+        if (zgpu_options.webgpu_backend == .dawn) gctx.swapchain.release();
         gctx.queue.release();
         gctx.device.release();
-        if (!emscripten) dniDestroy(gctx.native_instance);
+        if (!emscripten and zgpu_options.webgpu_backend == .dawn) dniDestroy(gctx.native_instance);
         allocator.destroy(gctx);
     }
 
@@ -411,7 +453,8 @@ pub const GraphicsContext = struct {
         if (gctx.uniforms.stage.num >= uniforms_staging_pipeline_len) {
             // Wait until one of the buffers is mapped and ready to use.
             while (true) {
-                gctx.device.tick();
+                if (zgpu_options.webgpu_backend == .dawn) gctx.device.tick();
+                if (zgpu_options.webgpu_backend == .wgpu) _ = gctx.device.poll(true, null);
 
                 i = 0;
                 while (i < gctx.uniforms.stage.num) : (i += 1) {
@@ -475,7 +518,7 @@ pub const GraphicsContext = struct {
         command_buffers.append(stage_commands) catch unreachable;
         command_buffers.appendSlice(commands) catch unreachable;
 
-        gctx.queue.onSubmittedWorkDone(0, gpuWorkDone, @ptrCast(&gctx.stats.gpu_frame_number));
+        gctx.queue.onSubmittedWorkDone(0, gpuWorkDone, @ptrCast(&gctx.stats.gpu_frame_number), zgpu_options.webgpu_backend == .wgpu);
         gctx.queue.submit(command_buffers.slice());
 
         gctx.stats.tick(gctx.window_provider.getTime());
@@ -495,22 +538,34 @@ pub const GraphicsContext = struct {
         normal_execution,
         swap_chain_resized,
     } {
-        if (!emscripten) gctx.swapchain.present();
+        if (!emscripten) {
+            if (zgpu_options.webgpu_backend == .dawn) gctx.swapchain.present();
+            if (zgpu_options.webgpu_backend == .wgpu) gctx.surface.present();
+        }
 
         const fb_size = gctx.window_provider.getFramebufferSize();
-        if (gctx.swapchain_descriptor.width != fb_size[0] or
-            gctx.swapchain_descriptor.height != fb_size[1])
+        if (gctx.width != fb_size[0] or
+            gctx.height != fb_size[1])
         {
             if (fb_size[0] != 0 and fb_size[1] != 0) {
-                gctx.swapchain_descriptor.width = @intCast(fb_size[0]);
-                gctx.swapchain_descriptor.height = @intCast(fb_size[1]);
-                gctx.swapchain.release();
+                gctx.width = @intCast(fb_size[0]);
+                gctx.height = @intCast(fb_size[1]);
 
-                gctx.swapchain = gctx.device.createSwapChain(gctx.surface, gctx.swapchain_descriptor);
+                if (zgpu_options.webgpu_backend == .dawn) {
+                    gctx.swapchain_descriptor.width = @intCast(fb_size[0]);
+                    gctx.swapchain_descriptor.height = @intCast(fb_size[1]);
+                    gctx.swapchain.release();
+
+                    gctx.swapchain = gctx.device.createSwapChain(gctx.surface, gctx.swapchain_descriptor);
+                } else if (zgpu_options.webgpu_backend == .wgpu) {
+                    gctx.surface_configuration.width = @intCast(fb_size[0]);
+                    gctx.surface_configuration.height = @intCast(fb_size[1]);
+                    gctx.surface.configure(&gctx.surface_configuration);
+                }
 
                 std.log.info(
                     "[zgpu] Window has been resized to: {d}x{d}.",
-                    .{ gctx.swapchain_descriptor.width, gctx.swapchain_descriptor.height },
+                    .{ gctx.width, gctx.height },
                 );
                 return .swap_chain_resized;
             }
@@ -940,6 +995,43 @@ pub const GraphicsContext = struct {
             BindGroupLayoutHandle => return gctx.bind_group_layout_pool.isHandleValid(handle),
             PipelineLayoutHandle => return gctx.pipeline_layout_pool.isHandleValid(handle),
             else => @compileError("[zgpu] GraphicsContext.isResourceValid() not implemented for " ++ @typeName(T)),
+        }
+    }
+
+    pub fn getCurrentTextureView(gctx: *GraphicsContext) wgpu.TextureView {
+        if (zgpu_options.webgpu_backend == .dawn) {
+            return gctx.swapchain.getCurrentTextureView();
+        } else if (zgpu_options.webgpu_backend == .wgpu) {
+            // Create a temporary SurfaceTexture to receive the current texture
+            var surface_texture = wgpu.SurfaceTexture{
+                .texture = undefined,
+                .suboptimal = .false,
+                .status = .outdated,
+            };
+            // Get current texture
+            gctx.surface.getCurrentTexture(&surface_texture);
+
+            // Check status and handle errors if needed
+            if (surface_texture.status != .success) {
+                // Reconfigure and try again if needed
+                gctx.surface.configure(&gctx.surface_configuration);
+                gctx.surface.getCurrentTexture(&surface_texture);
+
+                if (surface_texture.status != .success) {
+                    @panic("Failed to acquire next swapchain texture");
+                }
+            }
+
+            // Create view from the texture
+            return surface_texture.texture.createView(wgpu.TextureViewDescriptor{
+                .label = "surface_texture_view",
+                .format = gctx.surface_configuration.format,
+                .dimension = .tvdim_2d,
+                .mip_level_count = 1,
+                .array_layer_count = 1,
+            });
+        } else {
+            unreachable;
         }
     }
 

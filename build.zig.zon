@@ -44,5 +44,10 @@
             .hash = "N-V-__8AAIz1QAKx8C8vft2YoHjGTjEAkH2QMR2UiAo8xZJ-",
             .lazy = true,
         },
+        .wgpu_macos_aarch64_release = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v0.19.4.1/wgpu-macos-aarch64-release.zip",
+            .hash = "N-V-__8AAGHZ5QECMxhEnOTTDfIu50uG5qjbsU9_lK3aHWf7",
+            .lazy = true,
+        },
     },
 }
