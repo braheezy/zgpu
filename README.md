@@ -6,7 +6,7 @@ Supports Windows 10+ (DirectX 12), macOS 12+ (Metal) and Linux (Vulkan).
 
 ## Fork Additions
 
-`zgpu` originally supported Dawn only.This fork adds support for optionally choosing `wgpu-native` as the WebGPU backend. When setting up the dependency, set the build option:
+`zgpu` originally supported Dawn only. This fork adds support for optionally choosing `wgpu-native` as the WebGPU backend. When setting up the dependency, set the build option:
 
 ```zig
 const zgpu = b.dependency("zgpu", .{
