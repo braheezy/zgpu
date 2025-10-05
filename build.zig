@@ -113,19 +113,23 @@ pub fn build(b: *std.Build) void {
 
     const options_module = options_step.createModule();
 
-    _ = b.addModule("root", .{
+    const root_mod = b.addModule("root", .{
         .root_source_file = b.path("src/zgpu.zig"),
         .imports = &.{
             .{ .name = "zgpu_options", .module = options_module },
             .{ .name = "zpool", .module = b.dependency("zpool", .{}).module("root") },
         },
+        .target = target,
+        .optimize = optimize,
     });
 
     const webgpu_lib = if (options.webgpu_backend == .dawn) zdawn: {
         const zdawn = b.addLibrary(.{
             .name = "zdawn",
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         b.installArtifact(zdawn);
 
@@ -152,8 +156,10 @@ pub fn build(b: *std.Build) void {
     } else wgpu: {
         const zwgpu = b.addLibrary(.{
             .name = "zwgpu",
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         b.installArtifact(zwgpu);
 
@@ -175,11 +181,7 @@ pub fn build(b: *std.Build) void {
 
     const tests = b.addTest(.{
         .name = "zgpu-tests",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zgpu.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = root_mod,
     });
     tests.addIncludePath(b.path("libs/dawn/include"));
     tests.linkLibrary(webgpu_lib);

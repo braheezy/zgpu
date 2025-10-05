@@ -9,7 +9,7 @@ const std = @import("std");
 const math = std.math;
 const assert = std.debug.assert;
 const wgsl = @import("common_wgsl.zig");
-const zgpu_options = @import("zgpu_options");
+pub const zgpu_options = @import("zgpu_options");
 pub const wgpu = @import("wgpu.zig");
 pub const slog = std.log.scoped(.zgpu); // scoped log that can be comptime processed in main logger
 const emscripten = @import("builtin").target.os.tag == .emscripten;
@@ -141,7 +141,7 @@ pub const GraphicsContext = struct {
                     adapter: wgpu.Adapter,
                     message: ?[*:0]const u8,
                     userdata: ?*anyopaque,
-                ) callconv(.C) void {
+                ) callconv(.c) void {
                     _ = message;
                     const response = @as(*Response, @ptrCast(@alignCast(userdata)));
                     response.status = status;
@@ -172,39 +172,21 @@ pub const GraphicsContext = struct {
         };
         errdefer adapter.release();
 
-        if (zgpu_options.webgpu_backend == .dawn) {
-            var properties: wgpu.AdapterProperties = undefined;
-            properties.next_in_chain = null;
-            adapter.getProperties(&properties);
+        var properties: wgpu.AdapterProperties = undefined;
+        properties.next_in_chain = null;
+        adapter.getProperties(&properties);
 
-            if (emscripten) {
-                properties.name = "emscripten";
-                properties.driver_description = "emscripten";
-                properties.adapter_type = .unknown;
-                properties.backend_type = .undef;
-            }
-            std.log.info("[zgpu] High-performance device has been selected:", .{});
-            std.log.info("[zgpu]   Name: {s}", .{properties.name});
-            std.log.info("[zgpu]   Driver: {s}", .{properties.driver_description});
-            std.log.info("[zgpu]   Adapter type: {s}", .{@tagName(properties.adapter_type)});
-            std.log.info("[zgpu]   Backend type: {s}", .{@tagName(properties.backend_type)});
-        } else if (zgpu_options.webgpu_backend == .wgpu) {
-            var info: wgpu.AdapterInfo = undefined;
-            info.next_in_chain = null;
-            adapter.getInfo(&info);
-
-            if (emscripten) {
-                info.device = "emscripten";
-                info.description = "emscripten";
-                info.adapter_type = .unknown;
-                info.backend_type = .undef;
-            }
-            std.log.info("[zgpu] High-performance device has been selected:", .{});
-            std.log.info("[zgpu]   Device: {s}", .{info.device});
-            std.log.info("[zgpu]   Driver: {s}", .{info.description});
-            std.log.info("[zgpu]   Adapter type: {s}", .{@tagName(info.adapter_type)});
-            std.log.info("[zgpu]   Backend type: {s}", .{@tagName(info.backend_type)});
+        if (emscripten) {
+            properties.name = "emscripten";
+            properties.driver_description = "emscripten";
+            properties.adapter_type = .unknown;
+            properties.backend_type = .undef;
         }
+        std.log.info("[zgpu] High-performance device has been selected:", .{});
+        std.log.info("[zgpu]   Name: {s}", .{properties.name});
+        std.log.info("[zgpu]   Driver: {s}", .{properties.driver_description});
+        std.log.info("[zgpu]   Adapter type: {s}", .{@tagName(properties.adapter_type)});
+        std.log.info("[zgpu]   Backend type: {s}", .{@tagName(properties.backend_type)});
 
         const device = device: {
             const Response = struct {
@@ -218,7 +200,7 @@ pub const GraphicsContext = struct {
                     device: wgpu.Device,
                     message: ?[*:0]const u8,
                     userdata: ?*anyopaque,
-                ) callconv(.C) void {
+                ) callconv(.c) void {
                     _ = message;
                     const response = @as(*Response, @ptrCast(@alignCast(userdata)));
                     response.status = status;
@@ -416,7 +398,7 @@ pub const GraphicsContext = struct {
         gctx.uniformsNextStagingBuffer();
     }
 
-    fn uniformsMappedCallback(status: wgpu.BufferMapAsyncStatus, userdata: ?*anyopaque) callconv(.C) void {
+    fn uniformsMappedCallback(status: wgpu.BufferMapAsyncStatus, userdata: ?*anyopaque) callconv(.c) void {
         const usb = @as(*UniformsStagingBuffer, @ptrCast(@alignCast(userdata)));
         assert(usb.slice == null);
         if (status == .success) {
@@ -514,19 +496,20 @@ pub const GraphicsContext = struct {
         defer stage_commands.release();
 
         // TODO: We support up to 32 command buffers for now. Make it more robust.
-        var command_buffers = std.BoundedArray(wgpu.CommandBuffer, 32).init(0) catch unreachable;
-        command_buffers.append(stage_commands) catch unreachable;
-        command_buffers.appendSlice(commands) catch unreachable;
+        var buffer: [32]wgpu.CommandBuffer = undefined;
+        var command_buffers = std.ArrayListUnmanaged(wgpu.CommandBuffer).initBuffer(&buffer);
+        command_buffers.appendAssumeCapacity(stage_commands);
+        command_buffers.appendSliceBounded(commands) catch unreachable;
 
         gctx.queue.onSubmittedWorkDone(0, gpuWorkDone, @ptrCast(&gctx.stats.gpu_frame_number), zgpu_options.webgpu_backend == .wgpu);
-        gctx.queue.submit(command_buffers.slice());
+        gctx.queue.submit(command_buffers.items);
 
         gctx.stats.tick(gctx.window_provider.getTime());
 
         gctx.uniformsNextStagingBuffer();
     }
 
-    fn gpuWorkDone(status: wgpu.QueueWorkDoneStatus, userdata: ?*anyopaque) callconv(.C) void {
+    fn gpuWorkDone(status: wgpu.QueueWorkDoneStatus, userdata: ?*anyopaque) callconv(.c) void {
         const gpu_frame_number: *u64 = @ptrCast(@alignCast(userdata));
         gpu_frame_number.* += 1;
         if (status != .success) {
@@ -687,7 +670,7 @@ pub const GraphicsContext = struct {
             pipeline: wgpu.RenderPipeline,
             message: ?[*:0]const u8,
             userdata: ?*anyopaque,
-        ) callconv(.C) void {
+        ) callconv(.c) void {
             const op = @as(*AsyncCreateOpRender, @ptrCast(@alignCast(userdata)));
             if (status == .success) {
                 op.result.* = op.gctx.render_pipeline_pool.addResource(
@@ -748,7 +731,7 @@ pub const GraphicsContext = struct {
             pipeline: wgpu.ComputePipeline,
             message: ?[*:0]const u8,
             userdata: ?*anyopaque,
-        ) callconv(.C) void {
+        ) callconv(.c) void {
             const op = @as(*AsyncCreateOpCompute, @ptrCast(@alignCast(userdata)));
             if (status == .success) {
                 op.result.* = op.gctx.compute_pipeline_pool.addResource(
@@ -1854,21 +1837,21 @@ fn msgSend(obj: anytype, sel_name: [:0]const u8, args: anytype, comptime ReturnT
     const args_meta = @typeInfo(@TypeOf(args)).@"struct".fields;
 
     const FnType = switch (args_meta.len) {
-        0 => *const fn (@TypeOf(obj), objc.SEL) callconv(.C) ReturnType,
-        1 => *const fn (@TypeOf(obj), objc.SEL, args_meta[0].type) callconv(.C) ReturnType,
+        0 => *const fn (@TypeOf(obj), objc.SEL) callconv(.c) ReturnType,
+        1 => *const fn (@TypeOf(obj), objc.SEL, args_meta[0].type) callconv(.c) ReturnType,
         2 => *const fn (
             @TypeOf(obj),
             objc.SEL,
             args_meta[0].type,
             args_meta[1].type,
-        ) callconv(.C) ReturnType,
+        ) callconv(.c) ReturnType,
         3 => *const fn (
             @TypeOf(obj),
             objc.SEL,
             args_meta[0].type,
             args_meta[1].type,
             args_meta[2].type,
-        ) callconv(.C) ReturnType,
+        ) callconv(.c) ReturnType,
         4 => *const fn (
             @TypeOf(obj),
             objc.SEL,
@@ -1876,7 +1859,7 @@ fn msgSend(obj: anytype, sel_name: [:0]const u8, args: anytype, comptime ReturnT
             args_meta[1].type,
             args_meta[2].type,
             args_meta[3].type,
-        ) callconv(.C) ReturnType,
+        ) callconv(.c) ReturnType,
         else => @compileError("[zgpu] Unsupported number of args"),
     };
 
@@ -1890,7 +1873,7 @@ fn logUnhandledError(
     err_type: wgpu.ErrorType,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void {
+) callconv(.c) void {
     _ = userdata;
     switch (err_type) {
         .no_error => std.log.info("[zgpu] No error: {?s}", .{message}),
@@ -1947,14 +1930,13 @@ fn formatToShaderFormat(format: wgpu.TextureFormat) []const u8 {
     };
 }
 
-usingnamespace if (emscripten) struct {
-    // Missing symbols
-    var wgpuDeviceTickWarnPrinted: bool = false;
-    pub export fn wgpuDeviceTick() void {
+var wgpuDeviceTickWarnPrinted: bool = false;
+pub fn wgpuDeviceTick() void {
+    if (emscripten) {
         if (!wgpuDeviceTickWarnPrinted) {
             std.log.warn("wgpuDeviceTick(): this fn should be avoided! RequestAnimationFrame() is advised for smooth rendering in browser.", .{});
             wgpuDeviceTickWarnPrinted = true;
         }
         emscripten_sleep(1);
     }
-} else struct {};
+}

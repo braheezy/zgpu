@@ -1,5 +1,6 @@
 const std = @import("std");
 const emscripten = @import("builtin").target.os.tag == .emscripten;
+const zgpu_options = @import("zgpu.zig").zgpu_options;
 
 test "extern struct ABI compatibility" {
     @setEvalBranchQuota(10_000);
@@ -703,7 +704,7 @@ pub const TextureUsage = packed struct(u32) {
 };
 
 pub const ChainedStruct = extern struct {
-    next: ?*const ChainedStruct,
+    next: ?*const ChainedStruct = null,
     struct_type: StructType,
 };
 
@@ -723,23 +724,6 @@ pub const AdapterProperties = extern struct {
     adapter_type: AdapterType,
     backend_type: BackendType,
     compatibility_mode: bool,
-};
-
-pub const AdapterInfo = extern struct {
-    next_in_chain: ?*ChainedStructOut = null,
-    vendor: [*:0]const u8,
-    architecture: [*:0]const u8,
-    device: [*:0]const u8,
-    description: [*:0]const u8,
-    backend_type: BackendType,
-    adapter_type: AdapterType,
-    vendor_id: u32,
-    device_id: u32,
-
-    pub inline fn freeMembers(self: AdapterInfo) void {
-        wgpuAdapterInfoFreeMembers(self);
-    }
-    extern fn wgpuAdapterInfoFreeMembers(adapter_info: AdapterInfo) void;
 };
 
 pub const BindGroupEntry = extern struct {
@@ -1302,62 +1286,62 @@ pub const CreateComputePipelineAsyncCallback = *const fn (
     pipeline: ComputePipeline,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const CreateRenderPipelineAsyncCallback = *const fn (
     status: CreatePipelineAsyncStatus,
     pipeline: RenderPipeline,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const ErrorCallback = *const fn (
     err_type: ErrorType,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const LoggingCallback = *const fn (
     log_type: LoggingType,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const DeviceLostCallback = *const fn (
     reason: DeviceLostReason,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const RequestAdapterCallback = *const fn (
     status: RequestAdapterStatus,
     adapter: Adapter,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const RequestDeviceCallback = *const fn (
     status: RequestDeviceStatus,
     device: Device,
     message: ?[*:0]const u8,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const BufferMapCallback = *const fn (
     status: BufferMapAsyncStatus,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const QueueWorkDoneCallback = *const fn (
     status: QueueWorkDoneStatus,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const CompilationInfoCallback = *const fn (
     status: CompilationInfoRequestStatus,
     info: *const CompilationInfo,
     userdata: ?*anyopaque,
-) callconv(.C) void;
+) callconv(.c) void;
 
 pub const Adapter = *opaque {
     pub fn createDevice(adapter: Adapter, descriptor: DeviceDescriptor) Device {
@@ -1379,11 +1363,6 @@ pub const Adapter = *opaque {
         wgpuAdapterGetProperties(adapter, properties);
     }
     extern fn wgpuAdapterGetProperties(adapter: Adapter, properties: *AdapterProperties) void;
-
-    pub fn getInfo(adapter: Adapter, info: *AdapterInfo) void {
-        wgpuAdapterGetInfo(adapter, info);
-    }
-    extern fn wgpuAdapterGetInfo(adapter: Adapter, info: *AdapterInfo) void;
 
     pub fn hasFeature(adapter: Adapter, feature: FeatureName) bool {
         return wgpuAdapterHasFeature(adapter, feature);
@@ -2139,10 +2118,10 @@ pub const Device = *opaque {
     extern fn wgpuDeviceRelease(device: Device) void;
 };
 
-pub const WrappedSubmissionIndex = extern struct {
+pub const WrappedSubmissionIndex = if (zgpu_options.webgpu_backend == .wgpu) extern struct {
     queue: *Queue,
     submission_index: u64,
-};
+} else struct {};
 
 pub const ExternalTexture = *opaque {
     pub fn destroy(external_texture: ExternalTexture) void {
@@ -2285,7 +2264,7 @@ pub const Queue = *opaque {
                     queue: Queue,
                     callback: QueueWorkDoneCallback,
                     userdata: ?*anyopaque,
-                ) callconv(.C) void,
+                ) callconv(.c) void,
                 .{ .name = "wgpuQueueOnSubmittedWorkDone" },
             );
             oswd(queue, callback, userdata);
@@ -2296,7 +2275,7 @@ pub const Queue = *opaque {
                     signal_value: u64,
                     callback: QueueWorkDoneCallback,
                     userdata: ?*anyopaque,
-                ) callconv(.C) void,
+                ) callconv(.c) void,
                 .{ .name = "wgpuQueueOnSubmittedWorkDone" },
             );
             oswd(queue, signal_value, callback, userdata);
@@ -2943,7 +2922,7 @@ pub const Surface = *opaque {
     extern fn wgpuSurfaceGetCurrentTexture(surface: Surface, surface_texture: *SurfaceTexture) void;
 };
 
-pub const SurfaceConfiguration = extern struct {
+pub const SurfaceConfiguration = if (zgpu_options.webgpu_backend == .wgpu) extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     device: Device,
     format: TextureFormat,
@@ -2962,21 +2941,21 @@ pub const SurfaceConfiguration = extern struct {
         });
         return sc;
     }
-};
+} else struct {};
 
-pub const SurfaceConfigurationExtras = extern struct {
+pub const SurfaceConfigurationExtras = if (zgpu_options.webgpu_backend == .wgpu) extern struct {
     chain: ChainedStruct = ChainedStruct{
         .struct_type = .surface_configuration_extras,
     },
 
     desired_maximum_frame_latency: u32,
-};
+} else struct {};
 
-pub const SurfaceTexture = extern struct {
+pub const SurfaceTexture = if (zgpu_options.webgpu_backend == .wgpu) extern struct {
     texture: Texture,
     suboptimal: U32Bool,
     status: GetCurrentTextureStatus,
-};
+} else struct {};
 
 pub const GetCurrentTextureStatus = enum(u32) {
     success = 0x00000000,
