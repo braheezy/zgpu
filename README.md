@@ -1,12 +1,12 @@
 # [zgpu](https://github.com/zig-gamedev/zgpu)
 
-Cross-platform graphics lib for Zig built on top of [Dawn](https://github.com/zig-gamedev/dawn) native WebGPU implementation.
+Cross-platform graphics lib for Zig built on top of [Dawn](https://github.com/zig-gamedev/dawn) or [`wgpu-native`](https://github.com/gfx-rs/wgpu-native) WebGPU implementations.
 
 Supports Windows 10+ (DirectX 12), macOS 12+ (Metal) and Linux (Vulkan).
 
 ## Fork Additions
 
-This fork as support for choosing between Dawn or WGPU as the WebGPU backend. When setting up the dependency, you can optionally pick:
+`zgpu` originally supported Dawn only.This fork adds support for optionally choosing `wgpu-native` as the WebGPU backend. When setting up the dependency, set the build option:
 
 ```zig
 const zgpu = b.dependency("zgpu", .{
