@@ -122,7 +122,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const webgpu_lib = if (options.webgpu_backend == .dawn) zdawn: {
-        const zdawn = b.addStaticLibrary(.{
+        const zdawn = b.addLibrary(.{
             .name = "zdawn",
             .target = target,
             .optimize = optimize,
@@ -150,7 +150,7 @@ pub fn build(b: *std.Build) void {
         });
         break :zdawn zdawn;
     } else wgpu: {
-        const zwgpu = b.addStaticLibrary(.{
+        const zwgpu = b.addLibrary(.{
             .name = "zwgpu",
             .target = target,
             .optimize = optimize,
@@ -175,9 +175,11 @@ pub fn build(b: *std.Build) void {
 
     const tests = b.addTest(.{
         .name = "zgpu-tests",
-        .root_source_file = b.path("src/zgpu.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zgpu.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     tests.addIncludePath(b.path("libs/dawn/include"));
     tests.linkLibrary(webgpu_lib);
