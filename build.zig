@@ -136,7 +136,7 @@ pub fn build(b: *std.Build) void {
         linkSystemDeps(b, zdawn);
         addLibraryPathsTo(zdawn);
 
-        zdawn.linkSystemLibrary("dawn");
+        // zdawn.linkSystemLibrary("dawn");
         zdawn.linkLibC();
         if (target.result.abi != .msvc)
             zdawn.linkLibCpp();
@@ -148,10 +148,7 @@ pub fn build(b: *std.Build) void {
             .file = b.path("src/dawn.cpp"),
             .flags = &.{ "-std=c++17", "-fno-sanitize=undefined" },
         });
-        zdawn.addCSourceFile(.{
-            .file = b.path("src/dawn_proc.c"),
-            .flags = &.{"-fno-sanitize=undefined"},
-        });
+        // dawn_proc.c removed - prebuilt dawn.a already contains dawn_proc.cpp.o
         break :zdawn zdawn;
     } else wgpu: {
         const zwgpu = b.addLibrary(.{
@@ -244,9 +241,11 @@ pub fn addLibraryPathsTo(compile_step: *std.Build.Step.Compile) void {
                     compile_step.addLibraryPath(dawn_prebuilt.path(""));
                 }
             } else if (target.cpu.arch.isAARCH64()) {
-                if (b.lazyDependency("dawn_aarch64_macos", .{})) |dawn_prebuilt| {
-                    compile_step.addLibraryPath(dawn_prebuilt.path(""));
-                }
+                // if (b.lazyDependency("dawn_aarch64_macos", .{})) |dawn_prebuilt| {
+                //     compile_step.addLibraryPath(dawn_prebuilt.path(""));
+                // }
+                const dawn_darwin = b.dependency("dawn_darwin", .{});
+                compile_step.addObjectFile(dawn_darwin.path("dawn.a"));
             }
         },
         else => {},

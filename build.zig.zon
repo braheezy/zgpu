@@ -50,5 +50,9 @@
             .hash = "N-V-__8AAGHZ5QECMxhEnOTTDfIu50uG5qjbsU9_lK3aHWf7",
             .lazy = true,
         },
+        .dawn_darwin = .{
+            .url = "git+https://github.com/Thomvanoorschot/dawn_darwin#4d73fd9119d32b07bc280d39353af32cb673ce12",
+            .hash = "dawn_darwin-0.0.1-VSdLSJryRwMNTs8xYv9SrJT2zaBEpJXHSkVlGuMvKStF",
+        },
     },
 }

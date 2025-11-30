@@ -1,26 +1,40 @@
-// Copyright 2019 The Dawn Authors
+// Copyright 2019 The Dawn & Tint Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef INCLUDE_DAWN_PLATFORM_DAWNPLATFORM_H_
 #define INCLUDE_DAWN_PLATFORM_DAWNPLATFORM_H_
+
+#include <webgpu/webgpu.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 
 #include "dawn/platform/dawn_platform_export.h"
-#include "dawn/webgpu.h"
 
 namespace dawn::platform {
 
@@ -59,6 +73,10 @@ class DAWN_PLATFORM_EXPORT WaitableEvent {
   public:
     WaitableEvent() = default;
     virtual ~WaitableEvent() = default;
+
+    WaitableEvent(const WaitableEvent&) = delete;
+    WaitableEvent& operator=(const WaitableEvent&) = delete;
+
     virtual void Wait() = 0;        // Wait for completion
     virtual bool IsComplete() = 0;  // Non-blocking check if the event is complete
 };
@@ -69,8 +87,21 @@ class DAWN_PLATFORM_EXPORT WorkerTaskPool {
   public:
     WorkerTaskPool() = default;
     virtual ~WorkerTaskPool() = default;
+
+    WorkerTaskPool(const WorkerTaskPool&) = delete;
+    WorkerTaskPool& operator=(const WorkerTaskPool&) = delete;
+
     virtual std::unique_ptr<WaitableEvent> PostWorkerTask(PostWorkerTaskCallback,
                                                           void* userdata) = 0;
+};
+
+// These features map to similarly named ones in src/chromium/src/gpu/config/gpu_finch_features.h
+// in `namespace features`.
+enum class Features {
+    kWebGPUUseDXC,
+    kWebGPUUseTintIR,
+    kWebGPUUseVulkanMemoryModel,
+    kWebGPUEnableRangeAnalysisForRobustness,
 };
 
 class DAWN_PLATFORM_EXPORT Platform {
@@ -100,6 +131,14 @@ class DAWN_PLATFORM_EXPORT Platform {
                                        int max,
                                        int bucketCount);
 
+    // Invoked to add a UMA histogram count-based sample that requires high-performance
+    // counter (HPC) support.
+    virtual void HistogramCustomCountsHPC(const char* name,
+                                          int sample,
+                                          int min,
+                                          int max,
+                                          int bucketCount);
+
     // Invoked to add a UMA histogram enumeration sample
     virtual void HistogramEnumeration(const char* name, int sample, int boundaryValue);
 
@@ -115,14 +154,14 @@ class DAWN_PLATFORM_EXPORT Platform {
 
     virtual std::unique_ptr<WorkerTaskPool> CreateWorkerTaskPool();
 
+    // Hook for querying if a Finch feature is enabled.
+    virtual bool IsFeatureEnabled(Features feature);
+
   private:
     Platform(const Platform&) = delete;
     Platform& operator=(const Platform&) = delete;
 };
 
 }  // namespace dawn::platform
-
-// TODO(dawn:824): Remove once the deprecation period is passed.
-namespace dawn_platform = dawn::platform;
 
 #endif  // INCLUDE_DAWN_PLATFORM_DAWNPLATFORM_H_

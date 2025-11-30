@@ -1,4 +1,4 @@
-// Copyright 2018 The Dawn & Tint Authors
+// Copyright 2023 The Dawn & Tint Authors
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -25,25 +25,33 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef INCLUDE_DAWN_NATIVE_DAWN_NATIVE_EXPORT_H_
-#define INCLUDE_DAWN_NATIVE_DAWN_NATIVE_EXPORT_H_
-
-#if defined(DAWN_NATIVE_SHARED_LIBRARY)
-#if defined(_WIN32)
-#if defined(DAWN_NATIVE_IMPLEMENTATION)
-#define DAWN_NATIVE_EXPORT __declspec(dllexport)
-#else
-#define DAWN_NATIVE_EXPORT __declspec(dllimport)
+#ifdef __EMSCRIPTEN__
+#error "Do not include this header. Emscripten already provides headers needed for WebGPU."
 #endif
-#else  // defined(_WIN32)
-#if defined(DAWN_NATIVE_IMPLEMENTATION)
-#define DAWN_NATIVE_EXPORT __attribute__((visibility("default")))
-#else
-#define DAWN_NATIVE_EXPORT
-#endif
-#endif  // defined(_WIN32)
-#else   // defined(DAWN_NATIVE_SHARED_LIBRARY)
-#define DAWN_NATIVE_EXPORT
-#endif  // defined(DAWN_NATIVE_SHARED_LIBRARY)
 
-#endif  // INCLUDE_DAWN_NATIVE_DAWN_NATIVE_EXPORT_H_
+#ifndef WEBGPU_CPP_CHAINED_STRUCT_H_
+#define WEBGPU_CPP_CHAINED_STRUCT_H_
+
+#include <cstddef>
+#include <cstdint>
+
+// This header file declares the ChainedStruct structures separately from the WebGPU
+// headers so that dependencies can directly extend structures without including the larger header
+// which exposes capabilities that may require correctly set proc tables.
+namespace wgpu {
+
+    enum class SType : uint32_t;
+
+    struct ChainedStruct {
+        ChainedStruct const * nextInChain = nullptr;
+        SType sType = SType(0u);
+    };
+
+    struct ChainedStructOut {
+        ChainedStructOut * nextInChain = nullptr;
+        SType sType = SType(0u);
+    };
+
+}  // namespace wgpu}
+
+#endif // WEBGPU_CPP_CHAINED_STRUCT_H_

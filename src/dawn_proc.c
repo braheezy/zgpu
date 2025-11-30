@@ -319,11 +319,8 @@ void wgpuDeviceSetDeviceLostCallback(WGPUDevice device, WGPUDeviceLostCallback c
 void wgpuDeviceSetLabel(WGPUDevice device, char const * label) {
     procs.deviceSetLabel(device, label);
 }
-void wgpuDeviceSetLoggingCallback(WGPUDevice device, WGPULoggingCallback callback, void * userdata) {
-    procs.deviceSetLoggingCallback(device, callback, userdata);
-}
-void wgpuDeviceSetUncapturedErrorCallback(WGPUDevice device, WGPUErrorCallback callback, void * userdata) {
-    procs.deviceSetUncapturedErrorCallback(device, callback, userdata);
+void wgpuDeviceSetLoggingCallback(WGPUDevice device, WGPULoggingCallbackInfo callbackInfo) {
+    procs.deviceSetLoggingCallback(device, callbackInfo);
 }
 void wgpuDeviceTick(WGPUDevice device) {
     procs.deviceTick(device);
@@ -664,4 +661,3 @@ void wgpuTextureViewReference(WGPUTextureView textureView) {
 void wgpuTextureViewRelease(WGPUTextureView textureView) {
     procs.textureViewRelease(textureView);
 }
-
