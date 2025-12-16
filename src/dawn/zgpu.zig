@@ -1092,7 +1092,7 @@ pub const GraphicsContext = struct {
 
         const max_size = 2048;
 
-        assert((texture_info.usage & wgpu.TextureUsages.copy_dst) != 0);
+        assert(texture_info.usage.contains(wgpu.TextureUsages.copy_dst));
         assert(texture_info.dimension == .tdim_2d);
         assert(texture_info.size.width <= max_size and texture_info.size.height <= max_size);
         assert(texture_info.size.width == texture_info.size.height);
@@ -1132,7 +1132,10 @@ pub const GraphicsContext = struct {
             });
 
             mipgen.scratch_texture = gctx.createTexture(.{
-                .usage = wgpu.TextureUsages.copy_src | wgpu.TextureUsages.storage_binding,
+                .usage = wgpu.combineUsage(
+                    wgpu.TextureUsages.copy_src,
+                    wgpu.TextureUsages.storage_binding,
+                ),
                 .dimension = .tdim_2d,
                 .size = .{ .width = max_size / 2, .height = max_size / 2, .depth_or_array_layers = 1 },
                 .format = format,

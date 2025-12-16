@@ -113,15 +113,26 @@ pub fn build(b: *std.Build) void {
 
     const options_module = options_step.createModule();
 
-    const root_mod = b.addModule("root", .{
-        .root_source_file = b.path("src/zgpu.zig"),
+    const wgpu_common_mod = b.addModule("wgpu_common", .{
+        .root_source_file = b.path("src/wgpu_common.zig"),
         .imports = &.{
             .{ .name = "zgpu_options", .module = options_module },
-            .{ .name = "zpool", .module = b.dependency("zpool", .{}).module("root") },
         },
         .target = target,
         .optimize = optimize,
     });
+
+    const root_mod = b.addModule("root", .{
+        .root_source_file = if (options.webgpu_backend == .dawn) b.path("src/dawn/zgpu.zig") else b.path("src/wgpu_native/zgpu.zig"),
+        .imports = &.{
+            .{ .name = "zgpu_options", .module = options_module },
+            .{ .name = "zpool", .module = b.dependency("zpool", .{}).module("root") },
+            .{ .name = "wgpu_common", .module = wgpu_common_mod },
+        },
+        .target = target,
+        .optimize = optimize,
+    });
+    root_mod.addIncludePath(b.path("src"));
 
     const webgpu_lib = if (options.webgpu_backend == .dawn) zdawn: {
         const zdawn = b.addLibrary(.{
@@ -145,7 +156,7 @@ pub fn build(b: *std.Build) void {
         zdawn.addIncludePath(b.path("src"));
 
         zdawn.addCSourceFile(.{
-            .file = b.path("src/dawn.cpp"),
+            .file = b.path("src/dawn/dawn.cpp"),
             .flags = &.{ "-std=c++17", "-fno-sanitize=undefined" },
         });
         // dawn_proc.c removed - prebuilt dawn.a already contains dawn_proc.cpp.o
@@ -163,7 +174,7 @@ pub fn build(b: *std.Build) void {
         const wgpu_dep = b.lazyDependency("wgpu_macos_aarch64_release", .{}) orelse unreachable;
 
         linkSystemDeps(b, zwgpu);
-        addLibraryPathsTo(zwgpu);
+        // addLibraryPathsTo(zwgpu);
 
         zwgpu.addObjectFile(wgpu_dep.path("libwgpu_native.a"));
         zwgpu.linkLibC();
@@ -181,6 +192,7 @@ pub fn build(b: *std.Build) void {
         .root_module = root_mod,
     });
     tests.addIncludePath(b.path("libs/dawn/include"));
+    tests.addIncludePath(b.path("src"));
     tests.linkLibrary(webgpu_lib);
     linkSystemDeps(b, tests);
     addLibraryPathsTo(tests);
