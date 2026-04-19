@@ -140,6 +140,8 @@ pub fn build(b: *std.Build) void {
             .root_module = b.createModule(.{
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
+                .link_libcpp = target.result.abi != .msvc,
             }),
         });
         b.installArtifact(zdawn);
@@ -147,15 +149,10 @@ pub fn build(b: *std.Build) void {
         linkSystemDeps(b, zdawn);
         addLibraryPathsTo(zdawn);
 
-        // zdawn.linkSystemLibrary("dawn");
-        zdawn.linkLibC();
-        if (target.result.abi != .msvc)
-            zdawn.linkLibCpp();
+        zdawn.root_module.addIncludePath(b.path("libs/dawn/include"));
+        zdawn.root_module.addIncludePath(b.path("src"));
 
-        zdawn.addIncludePath(b.path("libs/dawn/include"));
-        zdawn.addIncludePath(b.path("src"));
-
-        zdawn.addCSourceFile(.{
+        zdawn.root_module.addCSourceFile(.{
             .file = b.path("src/dawn/dawn.cpp"),
             .flags = &.{ "-std=c++17", "-fno-sanitize=undefined" },
         });
@@ -167,22 +164,20 @@ pub fn build(b: *std.Build) void {
             .root_module = b.createModule(.{
                 .target = target,
                 .optimize = optimize,
+                .link_libc = true,
+                .link_libcpp = target.result.abi != .msvc,
             }),
         });
         b.installArtifact(zwgpu);
 
-        const wgpu_dep = b.lazyDependency("wgpu_macos_aarch64_release", .{}) orelse unreachable;
+        const wgpu_dep = b.lazyDependency("wgpu_macos_aarch64_release", .{}) orelse return;
 
         linkSystemDeps(b, zwgpu);
-        // addLibraryPathsTo(zwgpu);
 
-        zwgpu.addObjectFile(wgpu_dep.path("libwgpu_native.a"));
-        zwgpu.linkLibC();
-        if (target.result.abi != .msvc)
-            zwgpu.linkLibCpp();
+        zwgpu.root_module.addObjectFile(wgpu_dep.path("libwgpu_native.a"));
 
-        zwgpu.addIncludePath(wgpu_dep.path("include/wgpu/"));
-        zwgpu.addIncludePath(wgpu_dep.path("include/webgpu"));
+        zwgpu.root_module.addIncludePath(wgpu_dep.path("include/wgpu/"));
+        zwgpu.root_module.addIncludePath(wgpu_dep.path("include/webgpu"));
         break :wgpu zwgpu;
     };
     const test_step = b.step("test", "Run zgpu tests");
@@ -191,9 +186,9 @@ pub fn build(b: *std.Build) void {
         .name = "zgpu-tests",
         .root_module = root_mod,
     });
-    tests.addIncludePath(b.path("libs/dawn/include"));
-    tests.addIncludePath(b.path("src"));
-    tests.linkLibrary(webgpu_lib);
+    tests.root_module.addIncludePath(b.path("libs/dawn/include"));
+    tests.root_module.addIncludePath(b.path("src"));
+    tests.root_module.linkLibrary(webgpu_lib);
     linkSystemDeps(b, tests);
     addLibraryPathsTo(tests);
     b.installArtifact(tests);
@@ -205,23 +200,23 @@ pub fn linkSystemDeps(b: *std.Build, compile_step: *std.Build.Step.Compile) void
     switch (compile_step.rootModuleTarget().os.tag) {
         .windows => {
             if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-                compile_step.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
+                compile_step.root_module.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
             }
-            compile_step.linkSystemLibrary("ole32");
-            compile_step.linkSystemLibrary("dxguid");
+            compile_step.root_module.linkSystemLibrary("ole32", .{});
+            compile_step.root_module.linkSystemLibrary("dxguid", .{});
         },
         .macos => {
             if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-                compile_step.addLibraryPath(system_sdk.path("macos12/usr/lib"));
-                compile_step.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
+                compile_step.root_module.addLibraryPath(system_sdk.path("macos12/usr/lib"));
+                compile_step.root_module.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
             }
-            compile_step.linkSystemLibrary("objc");
-            compile_step.linkFramework("Metal");
-            compile_step.linkFramework("CoreGraphics");
-            compile_step.linkFramework("Foundation");
-            compile_step.linkFramework("IOKit");
-            compile_step.linkFramework("IOSurface");
-            compile_step.linkFramework("QuartzCore");
+            compile_step.root_module.linkSystemLibrary("objc", .{});
+            compile_step.root_module.linkFramework("Metal", .{});
+            compile_step.root_module.linkFramework("CoreGraphics", .{});
+            compile_step.root_module.linkFramework("Foundation", .{});
+            compile_step.root_module.linkFramework("IOKit", .{});
+            compile_step.root_module.linkFramework("IOSurface", .{});
+            compile_step.root_module.linkFramework("QuartzCore", .{});
         },
         else => {},
     }
@@ -233,31 +228,31 @@ pub fn addLibraryPathsTo(compile_step: *std.Build.Step.Compile) void {
     switch (target.os.tag) {
         .windows => {
             if (b.lazyDependency("dawn_x86_64_windows_gnu", .{})) |dawn_prebuilt| {
-                compile_step.addLibraryPath(dawn_prebuilt.path(""));
+                compile_step.root_module.addLibraryPath(dawn_prebuilt.path(""));
             }
         },
         .linux => {
             if (target.cpu.arch.isX86()) {
                 if (b.lazyDependency("dawn_x86_64_linux_gnu", .{})) |dawn_prebuilt| {
-                    compile_step.addLibraryPath(dawn_prebuilt.path(""));
+                    compile_step.root_module.addLibraryPath(dawn_prebuilt.path(""));
                 }
             } else if (target.cpu.arch.isAARCH64()) {
                 if (b.lazyDependency("dawn_aarch64_linux_gnu", .{})) |dawn_prebuilt| {
-                    compile_step.addLibraryPath(dawn_prebuilt.path(""));
+                    compile_step.root_module.addLibraryPath(dawn_prebuilt.path(""));
                 }
             }
         },
         .macos => {
             if (target.cpu.arch.isX86()) {
                 if (b.lazyDependency("dawn_x86_64_macos", .{})) |dawn_prebuilt| {
-                    compile_step.addLibraryPath(dawn_prebuilt.path(""));
+                    compile_step.root_module.addLibraryPath(dawn_prebuilt.path(""));
                 }
             } else if (target.cpu.arch.isAARCH64()) {
                 // if (b.lazyDependency("dawn_aarch64_macos", .{})) |dawn_prebuilt| {
                 //     compile_step.addLibraryPath(dawn_prebuilt.path(""));
                 // }
                 const dawn_darwin = b.dependency("dawn_darwin", .{});
-                compile_step.addObjectFile(dawn_darwin.path("dawn.a"));
+                compile_step.root_module.addObjectFile(dawn_darwin.path("dawn.a"));
             }
         },
         else => {},

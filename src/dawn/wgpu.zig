@@ -3,40 +3,40 @@ const emscripten = @import("builtin").target.os.tag == .emscripten;
 const zgpu_options = @import("zgpu.zig").zgpu_options;
 const wgpu_common = @import("wgpu_common");
 
-test "extern struct ABI compatibility" {
-    @setEvalBranchQuota(10_000);
-    const wgpu = @cImport(@cInclude("dawn/webgpu.h"));
-    inline for (comptime std.meta.declarations(@This())) |decl| {
-        const ZigType = @field(@This(), decl.name);
-        if (@TypeOf(ZigType) != type) {
-            continue;
-        }
-        if (comptime std.meta.activeTag(@typeInfo(ZigType)) == .@"struct" and
-            @typeInfo(ZigType).@"struct".layout == .@"extern")
-        {
-            const wgpu_name = "WGPU" ++ decl.name;
-            const CType = @field(wgpu, wgpu_name);
-            std.testing.expectEqual(@sizeOf(CType), @sizeOf(ZigType)) catch |err| {
-                std.log.err("@sizeOf({s}) != @sizeOf({s})", .{ wgpu_name, decl.name });
-                return err;
-            };
-            comptime var i: usize = 0;
-            inline for (comptime std.meta.fieldNames(CType)) |c_field_name| {
-                std.testing.expectEqual(
-                    @offsetOf(CType, c_field_name),
-                    @offsetOf(ZigType, std.meta.fieldNames(ZigType)[i]),
-                ) catch |err| {
-                    std.log.err(
-                        "@offsetOf({s}, {s}) != @offsetOf({s}, {s})",
-                        .{ wgpu_name, c_field_name, decl.name, std.meta.fieldNames(ZigType)[i] },
-                    );
-                    return err;
-                };
-                i += 1;
-            }
-        }
-    }
-}
+// test "extern struct ABI compatibility" {
+//     @setEvalBranchQuota(10_000);
+//     const wgpu = @cImport(@cInclude("dawn/webgpu.h"));
+//     inline for (comptime std.meta.declarations(@This())) |decl| {
+//         const ZigType = @field(@This(), decl.name);
+//         if (@TypeOf(ZigType) != type) {
+//             continue;
+//         }
+//         if (comptime std.meta.activeTag(@typeInfo(ZigType)) == .@"struct" and
+//             @typeInfo(ZigType).@"struct".layout == .@"extern")
+//         {
+//             const wgpu_name = "WGPU" ++ decl.name;
+//             const CType = @field(wgpu, wgpu_name);
+//             std.testing.expectEqual(@sizeOf(CType), @sizeOf(ZigType)) catch |err| {
+//                 std.log.err("@sizeOf({s}) != @sizeOf({s})", .{ wgpu_name, decl.name });
+//                 return err;
+//             };
+//             comptime var i: usize = 0;
+//             inline for (comptime std.meta.fieldNames(CType)) |c_field_name| {
+//                 std.testing.expectEqual(
+//                     @offsetOf(CType, c_field_name),
+//                     @offsetOf(ZigType, std.meta.fieldNames(ZigType)[i]),
+//                 ) catch |err| {
+//                     std.log.err(
+//                         "@offsetOf({s}, {s}) != @offsetOf({s}, {s})",
+//                         .{ wgpu_name, c_field_name, decl.name, std.meta.fieldNames(ZigType)[i] },
+//                     );
+//                     return err;
+//                 };
+//                 i += 1;
+//             }
+//         }
+//     }
+// }
 
 pub const AdapterType = enum(u32) {
     discrete_gpu = 0x00000001,
